@@ -68,7 +68,7 @@ absl::Status RunMPPGraph() {
   }
   RET_CHECK(capture.isOpened());
 
-  cv::namedWindow(kWindowName, WINDOW_NORMAL);
+  cv::namedWindow(kWindowName, cv::WINDOW_NORMAL);
   auto width = absl::GetFlag(FLAGS_width);
   auto height = absl::GetFlag(FLAGS_height);
   cv::resizeWindow(kWindowName, width, height);
