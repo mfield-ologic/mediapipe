@@ -31,19 +31,22 @@ constexpr char kInputStream[] = "input_video";
 constexpr char kOutputStream[] = "output_video";
 constexpr char kWindowName[] = "MediaPipe";
 
-ABSL_FLAG(std::string, calculator_graph_config_file, "",
+ABSL_FLAG(std::string, graph, "",
           "Name of file containing text format CalculatorGraphConfig proto.");
-ABSL_FLAG(std::string, input_video_path, "",
-          "Full path of video to load. "
-          "If not provided, attempt to use a webcam.");
-ABSL_FLAG(std::string, output_video_path, "",
-          "Full path of where to save result (.mp4 only). "
-          "If not provided, show result in a window.");
+ABSL_FLAG(std::string, input, "",
+          "gst-pipeline for input "
+          "If not provided, attempt to use a webcam at index 0.");
+ABSL_FLAG(int, width, 640,
+          "Width of the output window. "
+          "Defaults to 640 pixels");
+ABSL_FLAG(int, height, 480,
+          "Width of the output window. "
+          "Defaults to 480 pixels");
 
 absl::Status RunMPPGraph() {
   std::string calculator_graph_config_contents;
   MP_RETURN_IF_ERROR(mediapipe::file::GetContents(
-      absl::GetFlag(FLAGS_calculator_graph_config_file),
+      absl::GetFlag(FLAGS_graph),
       &calculator_graph_config_contents));
   LOG(INFO) << "Get calculator graph config contents: "
             << calculator_graph_config_contents;
@@ -57,24 +60,18 @@ absl::Status RunMPPGraph() {
 
   LOG(INFO) << "Initialize the camera or load the video.";
   cv::VideoCapture capture;
-  const bool load_video = !absl::GetFlag(FLAGS_input_video_path).empty();
+  const bool load_video = !absl::GetFlag(FLAGS_input).empty();
   if (load_video) {
-    capture.open(absl::GetFlag(FLAGS_input_video_path));
+    capture.open(absl::GetFlag(FLAGS_input));
   } else {
     capture.open(0);
   }
   RET_CHECK(capture.isOpened());
 
-  cv::VideoWriter writer;
-  const bool save_video = !absl::GetFlag(FLAGS_output_video_path).empty();
-  if (!save_video) {
-    cv::namedWindow(kWindowName, /*flags=WINDOW_AUTOSIZE*/ 1);
-#if (CV_MAJOR_VERSION >= 3) && (CV_MINOR_VERSION >= 2)
-    capture.set(cv::CAP_PROP_FRAME_WIDTH, 640);
-    capture.set(cv::CAP_PROP_FRAME_HEIGHT, 480);
-    capture.set(cv::CAP_PROP_FPS, 30);
-#endif
-  }
+  cv::namedWindow(kWindowName, WINDOW_NORMAL);
+  auto width = absl::GetFlag(FLAGS_width);
+  auto height = absl::GetFlag(FLAGS_height);
+  cv::resizeWindow(kWindowName, width, height);
 
   LOG(INFO) << "Start running the calculator graph.";
   ASSIGN_OR_RETURN(mediapipe::OutputStreamPoller poller,
@@ -123,25 +120,13 @@ absl::Status RunMPPGraph() {
     // Convert back to opencv for display or saving.
     cv::Mat output_frame_mat = mediapipe::formats::MatView(&output_frame);
     cv::cvtColor(output_frame_mat, output_frame_mat, cv::COLOR_RGB2BGR);
-    if (save_video) {
-      if (!writer.isOpened()) {
-        LOG(INFO) << "Prepare video writer.";
-        writer.open(absl::GetFlag(FLAGS_output_video_path),
-                    mediapipe::fourcc('a', 'v', 'c', '1'),  // .mp4
-                    capture.get(cv::CAP_PROP_FPS), output_frame_mat.size());
-        RET_CHECK(writer.isOpened());
-      }
-      writer.write(output_frame_mat);
-    } else {
-      cv::imshow(kWindowName, output_frame_mat);
-      // Press any key to exit.
-      const int pressed_key = cv::waitKey(5);
-      if (pressed_key >= 0 && pressed_key != 255) grab_frames = false;
-    }
+    cv::imshow(kWindowName, output_frame_mat);
+    // Press any key to exit.
+    const int pressed_key = cv::waitKey(5);
+    if (pressed_key >= 0 && pressed_key != 255) grab_frames = false;
   }
 
   LOG(INFO) << "Shutting down.";
-  if (writer.isOpened()) writer.release();
   MP_RETURN_IF_ERROR(graph.CloseInputStream(kInputStream));
   return graph.WaitUntilDone();
 }
